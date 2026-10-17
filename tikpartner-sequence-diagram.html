@@ -1,0 +1,91 @@
+<style>
+  html,body{background:#12161D; margin:0; padding:16px; overflow-x:auto;}
+  .sr-only{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0);}
+  #seqTP{width:max-content;}
+  @media (min-width:821px){
+    #seqTP{width:100%;}
+    #seqTP svg{width:100% !important; height:auto !important;}
+  }
+</style>
+<h2 class="sr-only">Sequence diagram of the TikPartner campaign lifecycle, from verified stat sync through escrow release and dispute handling</h2>
+<div id="seqTP"></div>
+<script type="module">
+import mermaid from 'https://esm.sh/mermaid@11/dist/mermaid.esm.min.mjs';
+await document.fonts.ready;
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'base',
+  fontFamily: '"anthropic-sans", sans-serif',
+  themeVariables: {
+    darkMode: true,
+    fontSize: '13px',
+    fontFamily: '"anthropic-sans", sans-serif',
+    lineColor: '#9c9a92',
+    textColor: '#c2c0b6',
+    actorBkg: '#3C3489',
+    actorBorder: '#AFA9EC',
+    actorTextColor: '#CECBF6',
+    noteBkgColor: '#633806',
+    noteTextColor: '#FAC775',
+    noteBorderColor: '#EF9F27',
+  },
+});
+const src = `sequenceDiagram
+    participant CeleryWorker
+    participant TikTokAPI
+    participant Backend
+    participant Brand
+    participant Influencer
+    participant StripeAPI
+
+    loop Scheduled sync
+        CeleryWorker->>TikTokAPI: Fetch follower/engagement stats
+        TikTokAPI-->>CeleryWorker: Latest verified stats
+        CeleryWorker->>Backend: Update influencer profile
+    end
+    Note over Backend: Profiles always reflect verified, not self-reported, data
+
+    Brand->>Backend: Browse influencers (verified stats)
+    Backend-->>Brand: Matching influencer profiles
+    Brand->>Backend: Create campaign + contract offer
+    Note over Backend: Contract status set to pending
+
+    Backend->>StripeAPI: Create payment intent (hold funds)
+    StripeAPI-->>Backend: Funds held in escrow
+    Note over Backend: Escrow funded, contract now active
+
+    Backend->>Influencer: Notify: new contract offer
+    Influencer->>Backend: In-app chat: negotiate terms
+    Backend-->>Brand: In-app chat: negotiate terms
+    Influencer->>Backend: Accept contract
+
+    Influencer->>Backend: Submit deliverable
+    Backend->>Brand: Notify: deliverable ready for review
+
+    alt Deliverable approved
+        Brand->>Backend: Approve deliverable
+        Backend->>StripeAPI: Release escrow via Stripe Connect
+        StripeAPI-->>Influencer: Payout sent
+        Note over Backend: Contract marked completed and paid
+    else Deliverable disputed
+        Brand->>Backend: Flag contract as disputed
+        Note over Backend: Contract enters disputed state, separate from in-progress/completed
+        Backend->>Backend: Route to dispute review
+        Backend-->>Brand: Dispute outcome
+        Backend-->>Influencer: Dispute outcome
+        Note over StripeAPI: Escrow released or refunded based on resolution
+    end`;
+const { svg } = await mermaid.render('seqTP-svg', src);
+document.getElementById('seqTP').innerHTML = svg;
+const svgEl = document.querySelector('#seqTP svg');
+if (svgEl) {
+  svgEl.removeAttribute('style');
+  const vb = svgEl.viewBox && svgEl.viewBox.baseVal;
+  if (vb && vb.width) {
+    const isMobile = window.innerWidth <= 820;
+    const scale = isMobile ? 0.38 : 1;
+    svgEl.setAttribute('width', vb.width * scale);
+    svgEl.setAttribute('height', vb.height * scale);
+  }
+}
+</script>

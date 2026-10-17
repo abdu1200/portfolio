@@ -1,0 +1,92 @@
+<style>
+  html,body{background:#12161D; margin:0; padding:16px; overflow-x:auto;}
+  .sr-only{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0);}
+  #seq9d{width:max-content;}
+  @media (min-width:821px){
+    #seq9d{width:100%;}
+    #seq9d svg{width:100% !important; height:auto !important;}
+  }
+</style>
+<h2 class="sr-only">Sequence diagram of the ride trip flow with the payment webhook routed through API Gateway</h2>
+<div id="seq9d"></div>
+<script type="module">
+import mermaid from 'https://esm.sh/mermaid@11/dist/mermaid.esm.min.mjs';
+const dark = true;
+await document.fonts.ready;
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'base',
+  fontFamily: '"anthropic-sans", sans-serif',
+  themeVariables: {
+    darkMode: dark,
+    fontSize: '13px',
+    fontFamily: '"anthropic-sans", sans-serif',
+    lineColor: dark ? '#9c9a92' : '#73726c',
+    textColor: dark ? '#c2c0b6' : '#3d3d3a',
+    actorBkg: dark ? '#3C3489' : '#EEEDFE',
+    actorBorder: dark ? '#AFA9EC' : '#534AB7',
+    actorTextColor: dark ? '#CECBF6' : '#26215C',
+    noteBkgColor: dark ? '#633806' : '#FAEEDA',
+    noteTextColor: dark ? '#FAC775' : '#412402',
+    noteBorderColor: dark ? '#EF9F27' : '#BA7517',
+  },
+});
+const src = `sequenceDiagram
+    participant User
+    participant APIGateway
+    participant TripService
+    participant DriverService
+    participant Driver
+    participant PaymentService
+    participant StripeAPI
+    participant OSRMAPI
+
+    User->>APIGateway: Preview trip route
+    APIGateway->>TripService: gRPC: PreviewTrip
+    TripService->>OSRMAPI: HTTP: get and calculate route
+    OSRMAPI-->>TripService: HTTP: route coordinates
+    TripService-->>APIGateway: HTTP: trip route info
+    APIGateway-->>User: Display trip preview UI
+    User->>APIGateway: Create trip request
+    APIGateway->>TripService: gRPC: CreateTrip
+    Note over TripService: Creates trip record, status set to requested
+    TripService-->>DriverService: trip.event.created (event: trip now exists)
+    Note over DriverService: Looks for an available driver to notify
+    DriverService-->>APIGateway: driver.cmd.trip_request (command: go offer this trip)
+    Note over APIGateway: Receives trip offer command from the broker
+    APIGateway->>Driver: WebSocket push: trip request
+    Note over Driver: App shows the incoming trip offer
+    Driver->>APIGateway: WebSocket: driver.cmd.trip_accept (command: accept this trip)
+    Note over APIGateway: Publishes driver's accept command to RabbitMQ
+    APIGateway-->>TripService: driver.cmd.trip_accept (command: accept this trip)
+    Note over TripService: Updates trip status to accepted and the actual driver info
+    TripService-->>APIGateway: trip.event.driver_assigned (event: forward match to rider)
+    Note over APIGateway: Receives driver-matched event from the broker
+    APIGateway->>User: WebSocket push: driver matched
+    Note over User: App shows driver, car, and phone number
+    Note over TripService: Requests payment session
+    TripService->>PaymentService: payment.event.session_requested (event: trip needs a payment session)
+    PaymentService->>StripeAPI: Create checkout session
+    StripeAPI-->>PaymentService: Session created
+    PaymentService-->>APIGateway: payment.event.session_created (event: session now exists)
+    Note over PaymentService: publishes session created event
+    APIGateway-->>User: WebSocket push: session info
+    Note over User: App shows payment form
+    User->>StripeAPI: Complete payment (after meetup and end of drive)
+    StripeAPI->>APIGateway: Webhook: payment success
+    APIGateway-->>TripService: payment.event.success (event: payment now succeeded)
+    Note over TripService: Marks the trip as completed and payed`;
+const { svg } = await mermaid.render('seq9d-svg', src);
+document.getElementById('seq9d').innerHTML = svg;
+const svgEl = document.querySelector('#seq9d svg');
+if (svgEl) {
+  svgEl.removeAttribute('style');
+  const vb = svgEl.viewBox && svgEl.viewBox.baseVal;
+  if (vb && vb.width) {
+    const isMobile = window.innerWidth <= 820;
+    const scale = isMobile ? 0.38 : 1;
+    svgEl.setAttribute('width', vb.width * scale);
+    svgEl.setAttribute('height', vb.height * scale);
+  }
+}
+</script>
